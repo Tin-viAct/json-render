@@ -4,11 +4,13 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "predev": "command -v portless >/dev/null 2>&1 || (echo '\\nportless is required but not installed. Run: npm i -g portless\\nSee: https://github.com/vercel-labs/portless\\n' && exit 1)",
+    "predev": "node ./scripts/ensure-json-render-dist.mjs && (command -v portless >/dev/null 2>&1 || (echo '\\nportless is required but not installed. Run: npm i -g portless\\nSee: https://github.com/vercel-labs/portless\\n' && exit 1))",
     "dev": "portless next-website-builder-demo.json-render next dev --turbopack",
+    "prebuild": "node ./scripts/ensure-json-render-dist.mjs",
     "build": "next build",
     "start": "next start",
-    "check-types": "tsc --noEmit"
+    "check-types": "node ./scripts/ensure-json-render-dist.mjs && tsc --noEmit",
+    "test": "vitest run -c vitest.config.ts"
   },
   "dependencies": {
     "@json-render/core": "workspace:*",

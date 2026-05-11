@@ -87,7 +87,22 @@ function ToolCallDisplay({
     state !== "output-error" &&
     state !== "output-denied";
   const labels = TOOL_LABELS[toolName];
-  const label = labels ? (isLoading ? labels[0] : labels[1]) : toolName;
+  const mcpMatch = toolName.match(/^mcp_([^_]+)_(.+)$/);
+  const mcpServer = mcpMatch?.[1];
+  const mcpTool = mcpMatch?.[2];
+  const mcpLabel =
+    mcpServer && mcpTool
+      ? `MCP ${mcpServer} · ${mcpTool.replace(/_/g, " ")}`
+      : null;
+  const label = labels
+    ? isLoading
+      ? labels[0]
+      : labels[1]
+    : mcpLabel
+      ? isLoading
+        ? `Calling ${mcpLabel}`
+        : `Called ${mcpLabel}`
+      : toolName;
 
   return (
     <div className="text-sm group">

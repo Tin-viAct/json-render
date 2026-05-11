@@ -1,13 +1,17 @@
-import { ToolLoopAgent, stepCountIs } from "ai";
+import { ToolLoopAgent, stepCountIs, type ToolSet } from "ai";
 import { gateway } from "@ai-sdk/gateway";
+import { google } from "@ai-sdk/google";
 import { explorerCatalog } from "./render/catalog";
+import { eptwFormPromptAdapter } from "./prompts";
 import { getWeather } from "./tools/weather";
 import { getGitHubRepo, getGitHubPullRequests } from "./tools/github";
 import { getCryptoPrice, getCryptoPriceHistory } from "./tools/crypto";
 import { getHackerNewsTop } from "./tools/hackernews";
 import { webSearch } from "./tools/search";
+import { getStockHistory } from "./tools/stocks";
 
 const DEFAULT_MODEL = "anthropic/claude-haiku-4.5";
+const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
 
 const AGENT_INSTRUCTIONS = `You are a knowledgeable assistant that helps users explore data and learn about any topic. You look up real-time information, build visual dashboards, and create rich educational content.
 
@@ -18,6 +22,9 @@ WORKFLOW:
 
 RULES:
 - Always call tools FIRST to get real data. Never make up data.
+- Prioritize construction and infrastructure use-cases when the user asks for domain dashboards (project progress, budget, schedule, risks, safety, quality, procurement, resource planning).
+- For construction prompts, gather real references with webSearch, then present a practical dashboard layout with metrics, charts, tables, and action-focused callouts.
+- Use getStockHistory only when the prompt is explicitly about stocks/indices/markets.
 - Embed the fetched data directly in /state paths so components can reference it.
 - Use Card components to group related information.
 - NEVER nest a Card inside another Card. If you need sub-sections inside a Card, use Stack, Separator, Heading, or Accordion instead.
@@ -113,6 +120,8 @@ INPUT COMPONENTS:
 - TextInput: Text input field. Writes entered value to statePath automatically.
 - Button: Clickable button. Use on.press to trigger actions.
 
+${eptwFormPromptAdapter.prompt}
+
 PATTERN — INTERACTIVE QUIZZES:
 When the user asks for a quiz, test, or Q&A, build an interactive experience:
 1. Initialize state for each question's answer and submission status:
@@ -141,18 +150,50 @@ ${explorerCatalog.prompt({
   ],
 })}`;
 
-export const agent = new ToolLoopAgent({
-  model: gateway(process.env.AI_GATEWAY_MODEL || DEFAULT_MODEL),
-  instructions: AGENT_INSTRUCTIONS,
-  tools: {
-    getWeather,
-    getGitHubRepo,
-    getGitHubPullRequests,
-    getCryptoPrice,
-    getCryptoPriceHistory,
-    getHackerNewsTop,
-    webSearch,
-  },
-  stopWhen: stepCountIs(5),
-  temperature: 0.7,
-});
+const baseTools: ToolSet = {
+  getWeather,
+  getGitHubRepo,
+  getGitHubPullRequests,
+  getCryptoPrice,
+  getCryptoPriceHistory,
+  getStockHistory,
+  getHackerNewsTop,
+  webSearch,
+};
+
+/**
+ * Builds a ToolLoopAgent using built-in tools plus optional MCP tools.
+ */
+export function createAgent(extraTools: ToolSet = {}): ToolLoopAgent {
+  return new ToolLoopAgent({
+    model: process.env.AI_GATEWAY_API_KEY
+      ? gateway(process.env.AI_GATEWAY_MODEL || DEFAULT_MODEL)
+      : google(process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL),
+    instructions: `${AGENT_INSTRUCTIONS}
+
+MCP TOOLS:
+- MCP tools are namespaced as mcp_<server>_<tool>.
+- Prefer MCP tools when user asks about connected enterprise systems.
+- Call MCP tools before final answer/UI and cite which MCP source you used.
+- Use mcp_viact_kb_* for knowledge/document retrieval tasks:
+  - policy, SOP, standards, manuals, requirements, definitions, procedures
+  - semantic lookup, chunk reading, document browsing
+- Use mcp_viact_dev_* for operational/project telemetry tasks:
+  - monitor/camera/device status, alerts, detections, trends, permits, inventory, smart lock events, safety stats
+- MCP tool routing rules:
+  1) If request asks "what/why/how/process/policy" from documents, call mcp_viact_kb_* first.
+  2) If request asks "current status/metrics/trend/list/events" from live systems, call mcp_viact_dev_* first.
+  3) If request combines docs + operations, call both families and merge into one dashboard.
+  4) If MCP call fails or returns empty, state that clearly and fallback to webSearch only when needed.
+- For all MCP outputs:
+  - include the source tool names in the summary,
+  - bind raw structured results into /state,
+  - build UI with Metric, Table, LineChart/BarChart, Callout, and Tabs where appropriate.`,
+    tools: {
+      ...baseTools,
+      ...extraTools,
+    },
+    stopWhen: stepCountIs(5),
+    temperature: 0.7,
+  });
+}

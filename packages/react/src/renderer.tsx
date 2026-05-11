@@ -347,7 +347,10 @@ const ElementRenderer = React.memo(function ElementRenderer({
   }
 
   // Resolve $bindState/$bindItem expressions → bindings map (prop name → state path)
-  const rawProps = element.props as Record<string, unknown>;
+  const rawProps =
+    element.props && typeof element.props === "object"
+      ? (element.props as Record<string, unknown>)
+      : {};
   const elementBindings = resolveBindings(rawProps, fullCtx);
 
   // Resolve dynamic prop expressions ($state, $item, $index, $bindState, $bindItem, $cond/$then/$else)

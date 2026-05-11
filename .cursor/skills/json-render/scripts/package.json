@@ -1,0 +1,8 @@
+{
+  "name": "json-render-skill-scripts",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "zod": "latest"
+  }
+}

@@ -309,9 +309,12 @@ export function resolvePropValue(
  * Returns a new props object with all expressions resolved.
  */
 export function resolveElementProps(
-  props: Record<string, unknown>,
+  props: Record<string, unknown> | null | undefined,
   ctx: PropResolutionContext,
 ): Record<string, unknown> {
+  if (!props || typeof props !== "object") {
+    return {};
+  }
   const resolved: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(props)) {
     resolved[key] = resolvePropValue(value, ctx);
@@ -335,9 +338,12 @@ export function resolveElementProps(
  * ```
  */
 export function resolveBindings(
-  props: Record<string, unknown>,
+  props: Record<string, unknown> | null | undefined,
   ctx: PropResolutionContext,
 ): Record<string, string> | undefined {
+  if (!props || typeof props !== "object") {
+    return undefined;
+  }
   let bindings: Record<string, string> | undefined;
   for (const [key, value] of Object.entries(props)) {
     if (isBindStateExpression(value)) {

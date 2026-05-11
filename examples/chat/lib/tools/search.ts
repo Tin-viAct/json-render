@@ -1,18 +1,19 @@
-import { tool, generateText } from "ai";
-import { gateway } from "@ai-sdk/gateway";
+import { tool } from "ai";
 import { z } from "zod";
 
+type TavilyResult = {
+  title?: string;
+  url?: string;
+  content?: string;
+  score?: number;
+};
+
 /**
- * Web search tool using Perplexity Sonar via AI Gateway.
- *
- * Perplexity Sonar models have built-in internet access and return
- * synthesized answers with citations. This is wrapped as a regular tool
- * (with an `execute` function) so that ToolLoopAgent can loop: it calls
- * the model, gets results, and feeds them back for the next step.
+ * Web search tool using Tavily Search API.
  */
 export const webSearch = tool({
   description:
-    "Search the web for current information on any topic. Use this when the user asks about something not covered by the specialized tools (weather, crypto, GitHub, Hacker News). Returns a synthesized answer based on real-time web data.",
+    "Search the web for information on any topic using Tavily. Use this when the user asks about something not covered by the specialized tools (weather, crypto, GitHub, Hacker News). Returns summary and sources.",
   inputSchema: z.object({
     query: z
       .string()
@@ -22,11 +23,49 @@ export const webSearch = tool({
   }),
   execute: async ({ query }) => {
     try {
-      const { text } = await generateText({
-        model: gateway("perplexity/sonar"),
-        prompt: query,
+      const apiKey = process.env.TAVILY_API_KEY;
+      if (!apiKey) {
+        return { error: "Missing TAVILY_API_KEY environment variable." };
+      }
+
+      const response = await fetch("https://api.tavily.com/search", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "User-Agent": "json-render-chat-example/1.0",
+        },
+        body: JSON.stringify({
+          api_key: apiKey,
+          query,
+          search_depth: "advanced",
+          max_results: 5,
+          include_answer: true,
+          include_raw_content: false,
+        }),
       });
-      return { content: text };
+
+      if (!response.ok) {
+        return { error: `Search failed: HTTP ${response.status}` };
+      }
+
+      const payload = (await response.json()) as {
+        answer?: string;
+        query?: string;
+        results?: TavilyResult[];
+      };
+
+      const sources = (payload.results ?? []).map((result) => ({
+        title: result.title ?? result.url ?? "Untitled",
+        url: result.url ?? "",
+        content: result.content ?? "",
+        score: result.score ?? null,
+      }));
+
+      return {
+        content:
+          payload.answer || `Top results for "${payload.query || query}"`,
+        sources,
+      };
     } catch (error) {
       return {
         error: `Search failed: ${error instanceof Error ? error.message : "Unknown error"}`,

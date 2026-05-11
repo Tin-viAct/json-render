@@ -1,4 +1,5 @@
-import { agent } from "@/lib/agent";
+import { createAgent } from "@/lib/agent";
+import { McpToolBridge } from "@/lib/mcp/bridge";
 import { minuteRateLimit, dailyRateLimit } from "@/lib/rate-limit";
 import {
   convertToModelMessages,
@@ -10,6 +11,15 @@ import { pipeJsonRender } from "@json-render/core";
 import { headers } from "next/headers";
 
 export const maxDuration = 60;
+let sharedMcpBridge: McpToolBridge | null = null;
+
+async function getSharedMcpBridge(): Promise<McpToolBridge> {
+  if (!sharedMcpBridge) {
+    sharedMcpBridge = new McpToolBridge();
+    await sharedMcpBridge.initialize();
+  }
+  return sharedMcpBridge;
+}
 
 export async function POST(req: Request) {
   const headersList = await headers();
@@ -49,14 +59,30 @@ export async function POST(req: Request) {
     );
   }
 
-  const modelMessages = await convertToModelMessages(uiMessages);
-  const result = await agent.stream({ messages: modelMessages });
+  try {
+    const mcpBridge = await getSharedMcpBridge();
+    const modelMessages = await convertToModelMessages(uiMessages);
+    const agent = createAgent(mcpBridge.toToolSet());
+    const result = await agent.stream({ messages: modelMessages });
 
-  const stream = createUIMessageStream({
-    execute: async ({ writer }) => {
-      writer.merge(pipeJsonRender(result.toUIMessageStream()));
-    },
-  });
+    const stream = createUIMessageStream({
+      execute: async ({ writer }) => {
+        writer.merge(pipeJsonRender(result.toUIMessageStream()));
+      },
+    });
 
-  return createUIMessageStreamResponse({ stream });
+    return createUIMessageStreamResponse({ stream });
+  } catch (error) {
+    if (sharedMcpBridge) {
+      await sharedMcpBridge.close().catch(() => {});
+      sharedMcpBridge = null;
+    }
+    return new Response(
+      JSON.stringify({
+        error: "MCP initialization failed",
+        message: error instanceof Error ? error.message : "Unknown MCP error",
+      }),
+      { status: 500, headers: { "Content-Type": "application/json" } },
+    );
+  }
 }
